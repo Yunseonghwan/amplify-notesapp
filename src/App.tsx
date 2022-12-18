@@ -5,7 +5,12 @@ import { listTodos } from "./graphql/queries";
 import "antd/dist/reset.css";
 import { Button, Input, List } from "antd";
 import { v4 as uuid } from "uuid";
-import { createTodo as CreateTodo } from "./graphql/mutations";
+import {
+  createTodo as CreateTodo,
+  deleteTodo as DeleteTodo,
+  updateTodo as UpdateTodo,
+} from "./graphql/mutations";
+import { onCreateTodo } from "./graphql/subscriptions";
 
 const CLIENT_ID = uuid();
 
@@ -43,6 +48,20 @@ const reducer = (state: any, action: any) => {
 function App() {
   const [state, dispatch] = useReducer(reducer, initalState);
 
+  useEffect(() => {
+    fetchNotes();
+    const subscription = API.graphql({
+      query: onCreateTodo,
+    }).subscribe({
+      next: (noteData: any) => {
+        const note = noteData.value.data.onCreateToto;
+        if (CLIENT_ID === note.clientId) return;
+        dispatch({ type: "ADD_NOTE", note });
+      },
+    });
+    return () => subscription.unSubscribe();
+  }, []);
+
   const fetchNotes = async () => {
     try {
       const notesData: GraphQLResult<any> = await API.graphql({
@@ -77,13 +96,55 @@ function App() {
     dispatch({ type: "SET_INPUT", name: e.target.name, value: e.target.value });
   };
 
-  useEffect(() => {
-    fetchNotes();
-  }, []);
+  const deleteNote = async ({ id }: any) => {
+    const index = state.note.findIndex((n: any) => n.id === id);
+    const notes = [
+      ...state.notes.slice(0, index),
+      ...state.notex.slice(index + 1),
+    ];
+    dispatch({ type: "SET_NOTES", notes });
+    try {
+      await API.graphql({
+        query: DeleteTodo,
+        variables: { input: { id } },
+      });
+      console.log("successfully deleted note!");
+    } catch (err) {
+      console.log({ err });
+    }
+  };
+
+  const updateNote = async (note: any) => {
+    const index = state.note.findIndex((n: any) => n.id === note.id);
+    const notes = [...state.notes];
+    notes[index].completed = !note.completed;
+    dispatch({ type: "SET_NOTES", notes });
+    try {
+      await API.graphql({
+        query: UpdateTodo,
+        variables: {
+          input: { id: note.id, completed: notes[index].completed },
+        },
+      });
+      console.log("note successfully update!");
+    } catch (err) {
+      console.log("error:", err);
+    }
+  };
 
   const renderItem = (item: any) => {
     return (
-      <List.Item style={{ textAlign: "left" }}>
+      <List.Item
+        style={{ textAlign: "left" }}
+        actions={[
+          <p style={{ color: "#1890ff" }} onClick={() => deleteNote(item)}>
+            Delete
+          </p>,
+          <p style={{ color: "#1890ff" }} onClick={() => updateNote(item)}>
+            {item.completed ? "completed" : "mark completed"}
+          </p>,
+        ]}
+      >
         <List.Item.Meta title={item.name} description={item.description} />
       </List.Item>
     );
